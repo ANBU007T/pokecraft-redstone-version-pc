@@ -247,18 +247,36 @@ function createRelayServer(options = {}) {
       return;
     }
 
+    const SKINS_LIST = ['alex', 'zuri', 'sunny', 'noor', 'makena', 'kai', 'efe', 'ari'];
+    let assignedSkin = parsedUrl.searchParams.get('skin');
+    if (!assignedSkin || !SKINS_LIST.includes(assignedSkin.toLowerCase())) {
+      const lowerName = name.toLowerCase().trim();
+      if (SKINS_LIST.includes(lowerName)) {
+        assignedSkin = lowerName;
+      } else {
+        // Hash name to deterministically pick a unique skin among unused ones
+        let hash = 0;
+        for (let i = 0; i < lowerName.length; i++) hash = (hash * 31 + lowerName.charCodeAt(i)) >>> 0;
+        const usedSkins = new Set(room.roster.map((r) => r[2]));
+        const pref = SKINS_LIST[hash % SKINS_LIST.length];
+        assignedSkin = !usedSkins.has(pref) ? pref : (SKINS_LIST.find((s) => !usedSkins.has(s)) || pref);
+      }
+    } else {
+      assignedSkin = assignedSkin.toLowerCase();
+    }
+
     const assignedSlot = availableSlots[0];
     const guestToken = genToken();
 
     room.guests.set(assignedSlot, ws);
     room.tokens.set(assignedSlot, guestToken);
-    room.roster.push([assignedSlot, name, skin, 0]);
+    room.roster.push([assignedSlot, name, assignedSkin, 0]);
 
     ws.roomCode = code;
     ws.slot = assignedSlot;
     ws.token = guestToken;
 
-    console.log(`[Relay] Guest ${name} (${skin}) joined room ${code} at slot ${assignedSlot}`);
+    console.log(`[Relay] Guest ${name} (${assignedSkin}) joined room ${code} at slot ${assignedSlot}`);
 
     ws.send(JSON.stringify({
       t: 'welcome',
@@ -268,7 +286,7 @@ function createRelayServer(options = {}) {
       roster: room.roster
     }));
 
-    const joinMsg = JSON.stringify({ t: 'join', slot: assignedSlot, name, skin });
+    const joinMsg = JSON.stringify({ t: 'join', slot: assignedSlot, name, skin: assignedSkin });
     if (room.host && room.host.readyState === 1) {
       room.host.send(joinMsg);
     }

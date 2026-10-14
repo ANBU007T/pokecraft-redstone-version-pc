@@ -1,7 +1,7 @@
 {
   "name": "pokecraft-redstone-version-rush-edition",
-  "version": "1.0.1",
-  "description": "PokéCRAFT - Pokemon Redstone PC Desktop (Rush Edition v1.0.1) — Minecraft Steve in FireRed Kanto",
+  "version": "1.0.2",
+  "description": "PokéCRAFT - Pokemon Redstone PC Desktop (v1.0.2 Multiplayer Co-Op) — Steve in FireRed Kanto",
   "main": "main.electron.js",
   "repository": "https://github.com/ANBU007T/pokecraft-redstone-version-rush-edition",
   "contributors": [

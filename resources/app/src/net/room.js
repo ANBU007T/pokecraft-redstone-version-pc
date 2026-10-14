@@ -73,14 +73,26 @@ export async function prepareBuild() {
   buildId = null;
 }
 
-// where the relay is: the page's own origin (the Pages Function /api/room/<code>), or, on a local dev server only,
-// ?coop=ws://127.0.0.1:5901 (the rooms Worker under `wrangler dev`)
+// where the relay is: configured relay in localStorage, query override ?coop=ws://...,
+// embedded relay ws://127.0.0.1:5901 for desktop PC app, or the page's host
 export function roomBase() {
   const q = new URLSearchParams(location.search).get('coop');
-  const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  if (q && local && /^wss?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(q)) return q;
+  if (q && /^wss?:\/\//.test(q)) return q;
+
+  try {
+    const saved = localStorage.getItem('rs.coop.relay');
+    if (saved && /^wss?:\/\//.test(saved.trim())) return saved.trim().replace(/\/+$/, '');
+  } catch (e) {}
+
+  const isDesktop = location.protocol === 'app:' || location.protocol === 'file:' || location.host === 'game';
+  const isLocalHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (isDesktop || isLocalHost) {
+    return 'ws://127.0.0.1:5901';
+  }
+
   return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
 }
+
 
 // accents come off (the Minecraft font draws only ASCII and é): Zoë plays as Zoe, ça as ca
 export function foldText(s) {

@@ -290,7 +290,12 @@ export function openJoin({ code = '', from = null } = {}) {
       customBase = s;
       try { localStorage.setItem('rs.coop.server', rawServer); } catch(e){}
     }
-    const bad = S.requestJoin(codeIn.value, nameIn.value, skinIn.value, customBase);
+    let chosenSkin = skinIn.value;
+    if (!chosenSkin && nameIn.value) {
+      const lower = nameIn.value.toLowerCase().trim();
+      if (SKINS.includes(lower)) chosenSkin = lower;
+    }
+    const bad = S.requestJoin(codeIn.value, nameIn.value, chosenSkin, customBase);
     if (bad) { err.textContent = bad === TEXT.badname ? 'Names are 1 to 10 letters (A to Z) or numbers.' : 'Enter the 5-letter room code.'; return; }
     err.textContent = 'Joining...';
     for (const b of form.querySelectorAll('button')) b.disabled = true;

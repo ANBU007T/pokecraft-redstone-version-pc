@@ -297,7 +297,17 @@ export class Session {
     // skins: a returning guest keeps its own unless someone here already wears it; nobody shares one
     const used = new Set(['steve']);
     for (const [k] of room.roster) if (k !== slot && k !== 0) used.add(this.skinOf(k));
-    let skin = SKINS.includes(r.skin) && r.skin !== 'steve' ? r.skin : 'alex';
+    let skin = SKINS.includes(r.skin) && r.skin !== 'steve' ? r.skin : null;
+    if (!skin && r.name && GUEST_SKINS.includes(r.name.toLowerCase())) {
+      skin = r.name.toLowerCase();
+    }
+    if (!skin) {
+      let hash = 0;
+      const lower = String(r.name || '').toLowerCase();
+      for (let i = 0; i < lower.length; i++) hash = (hash * 31 + lower.charCodeAt(i)) >>> 0;
+      const pref = GUEST_SKINS[hash % GUEST_SKINS.length];
+      skin = !used.has(pref) ? pref : (GUEST_SKINS.find((s) => !used.has(s)) || 'alex');
+    }
     if (rec && GUEST_SKINS.includes(rec.skin) && !used.has(rec.skin)) skin = rec.skin;
     if (used.has(skin)) skin = GUEST_SKINS.find((s) => !used.has(s)) || skin;
     this.skinOver.set(slot, skin);
@@ -397,8 +407,9 @@ export class Session {
     this.addLine(`${this.myName} joined the game`, YELLOW);
     try { localStorage.setItem('rs.coop.name', this.myName); } catch (e) { /* no storage */ }
     // a reload of this tab (or a fresh join after a lost connection) comes back as this same character
-    NET.boot = { op: 'join', code: room.code, name: this.myName, skin: this.mySkin, tries: 0, again: 1 };
+    NET.boot = { op: 'join', code: room.code, name: this.myName, skin: this.mySkin, base: room.base, tries: 0, again: 1 };
     try { sessionStorage.setItem('rs.coop', JSON.stringify(NET.boot)); } catch (e) { /* no storage */ }
+
     // the guest's own Steve wears its skin (the sheets load in a moment; Steve's are drawn until then)
     if (this.mySkin !== 'steve') SK.applyOwnSkin(this.mySkin).catch(report);
     // a generated world (9.5, stage 10): this device's player id, so a hardcore death's dead list knows it renamed
@@ -606,21 +617,21 @@ export function goHome(msg) {
 }
 // JOIN (title or START menu): the page reloads straight into the host's world; this player's own save is never
 // touched while it is there. A blank name takes the skin's name (ALEX, then ZURI... if that one is playing).
-export function requestJoin(code, name, skin) {
+export function requestJoin(code, name, skin, base = null) {
   const c = cleanCode(code);
   if (!CODE_RE.test(c)) return TEXT.nocode;
   const n = String(name || '').trim();
   if (n && !cleanName(n)) return TEXT.badname;
-  goJoin({ op: 'join', code: c, name: n ? cleanName(n) : '', skin: SKINS.includes(skin) && skin !== 'steve' ? skin : '', tries: 0 });
+  goJoin({ op: 'join', code: c, name: n ? cleanName(n) : '', skin: SKINS.includes(skin) && skin !== 'steve' ? skin : '', base, tries: 0 });
   return null;
 }
 
 // ------------------------------------------------------------ starting
-export async function startHost(name = 'STEVE') {
+export async function startHost(name = 'STEVE', base = null) {
   if (NET.room) throw new Error('A room is already open.');
   const n = cleanName(name) || 'STEVE';
   const S = new Session('host');
-  const room = new RoomClient({ role: 'host', name: n, skin: 'steve' });
+  const room = new RoomClient({ role: 'host', name: n, skin: 'steve', ...(base ? { base } : {}) });
   NET.s = S; NET.room = room;
   S.attach(room); S.myName = n;
   S.world = new HostWorld(S); NET.h = S.world;
@@ -648,15 +659,29 @@ export async function bootGuest(req) {
   const auto = !req.name;
   let idx = Math.max(0, GUEST_SKINS.indexOf(req.skin)), waits = 0;
   for (;;) {
-    const skin = auto ? GUEST_SKINS[idx] : req.skin || '';
+    let skin = req.skin && SKINS.includes(req.skin) && req.skin !== 'steve' ? req.skin : '';
+    if (!skin && req.name && GUEST_SKINS.includes(req.name.toLowerCase())) {
+      skin = req.name.toLowerCase();
+    }
+    if (!skin) {
+      if (auto) {
+        skin = GUEST_SKINS[idx];
+      } else {
+        let hash = 0;
+        const lower = String(req.name || '').toLowerCase();
+        for (let i = 0; i < lower.length; i++) hash = (hash * 31 + lower.charCodeAt(i)) >>> 0;
+        skin = GUEST_SKINS[hash % GUEST_SKINS.length];
+      }
+    }
     const name = auto ? label(skin) : req.name;
-    const room = new RoomClient({ role: 'guest', code: req.code, name, skin });
+    const room = new RoomClient({ role: 'guest', code: req.code, name, skin, ...(req.base ? { base: req.base } : {}) });
     NET.room = room;
     S.attach(room);
     try { await room.start(); S.booting = false; break; } catch (e) {
       const code = room.error && room.error.code;
       if (NET.room === room) NET.room = null;
       NET.guest = true;
+
       // a blank name: that skin's name is playing, so try the next skin
       if (code === 4409 && auto && idx < GUEST_SKINS.length - 1) { idx++; continue; }
       // rejoining after a lost connection: the room may still hold the old slot (that name, or the room counts it
@@ -690,9 +715,10 @@ function* cellsOf(W, chunks) {
 
 // window.__rs.net hooks
 export const api = {
-  host: (name) => startHost(name),
-  join: (code, name, skin) => { const err = requestJoin(code, name, skin); if (err) throw new Error(err); return 'reloading'; },
+  host: (name, base) => startHost(name, base),
+  join: (code, name, skin, base) => { const err = requestJoin(code, name, skin, base); if (err) throw new Error(err); return 'reloading'; },
   leave: () => (NET.s ? (NET.s.role === 'host' ? NET.s.close() : NET.s.leave()) : null),
+
   chat: (text) => (NET.s ? NET.s.sendChat(text) : false),
   records: () => (G.coop ? JSON.parse(JSON.stringify(G.coop)) : null),
   uiDo: (...a) => UI.testDo(...a),

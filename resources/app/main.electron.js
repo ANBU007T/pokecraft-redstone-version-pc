@@ -1,6 +1,8 @@
 const { app, BrowserWindow, protocol, net, ipcMain, shell } = require('electron');
 const path = require('path');
 const url = require('url');
+const { startRelayServer, stopRelayServer, getLocalIpAddresses } = require('./relay_server.js');
+
 
 // Enable GPU hardware acceleration flags
 app.commandLine.appendSwitch('enable-gpu-rasterization');
@@ -89,7 +91,20 @@ app.whenReady().then(() => {
     return net.fetch(url.pathToFileURL(filePath).toString());
   });
 
+  // Multiplayer Relay Server
+  startRelayServer(5901, '0.0.0.0').catch((err) => {
+    console.warn('[Electron] Could not start embedded relay server:', err.message);
+  });
+
   // IPC Handlers
+  ipcMain.handle('get-network-ips', () => {
+    return getLocalIpAddresses();
+  });
+
+  ipcMain.handle('get-relay-port', () => {
+    return 5901;
+  });
+
   ipcMain.handle('toggle-fullscreen', () => {
     if (!mainWindow) return false;
     const nextState = !mainWindow.isFullScreen();
@@ -130,7 +145,9 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopRelayServer().catch(() => {});
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
+
